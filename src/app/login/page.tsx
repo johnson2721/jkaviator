@@ -34,7 +34,7 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [mode, setMode] = useState<Mode>("password");
+  const [mode, setMode] = useState<Mode>(params.get("mode") === "forgot" ? "forgot" : "password");
   const [error, setError] = useState<{ text: string; unknown?: boolean } | null>(null);
   const [hint, setHint] = useState<string | null>(null);
 
@@ -50,6 +50,7 @@ function LoginForm() {
         phone: data.phone ?? identifier,
         identifier,
         code: data.devCode ?? null,
+        resendAt: Date.now() + 20_000,
         mode: data.mode ?? fallbackMode,
       }),
     );

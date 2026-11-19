@@ -2,6 +2,7 @@ import { db } from "@/db";
 import { pendingRegistrations, users } from "@/db/schema";
 import { hashPassword } from "@/lib/server/crypto";
 import { isValidEmail, normalizePhone, passwordIssues } from "@/lib/server/phone";
+import { smsConfig } from "@/lib/server/config";
 import { issueOtp } from "@/lib/server/otp";
 import { eq } from "drizzle-orm";
 
@@ -24,8 +25,17 @@ export async function POST(req: Request) {
     const issues = passwordIssues(password);
     if (issues.length) return Response.json({ error: `Password must have ${issues.join(", ")}.` }, { status: 400 });
 
+    const sms = smsConfig();
+    if (!process.env.DATABASE_URL?.trim() || (process.env.SESSION_SECRET?.trim().length ?? 0) < 32 ||
+        (process.env.NODE_ENV === "production" && (!sms.username || !sms.apiKey))) {
+      return Response.json({ error: "Sign-up is temporarily unavailable. Please try again later." }, { status: 503 });
+    }
+
     const existing = await db.select().from(users).where(eq(users.phone, phone)).limit(1);
     if (existing[0]) {
+      if (existing[0].status === "blocked") {
+        return Response.json({ error: "This account is blocked. Contact support." }, { status: 403 });
+      }
       if (existing[0].status === "active") {
         return Response.json(
           { error: "That number is already registered. Log in with your password.", alreadyRegistered: true },
@@ -33,6 +43,7 @@ export async function POST(req: Request) {
         );
       }
       const delivery = await issueOtp(phone, "register");
+      if (!delivery.ok) return Response.json({ error: "Could not send the SMS. Try again later." }, { status: 502 });
       return Response.json({
         ok: true,
         phone,
@@ -48,7 +59,7 @@ export async function POST(req: Request) {
 
     const delivery = await issueOtp(phone, "register");
     if (!delivery.ok) {
-      return Response.json({ error: `Could not deliver the SMS (${delivery.error}). Try again.` }, { status: 502 });
+      return Response.json({ error: "Could not send the SMS. Try again later." }, { status: 502 });
     }
     return Response.json({ ok: true, phone, channel: delivery.channel, devCode: delivery.demoCode });
   } catch (err) {

@@ -43,7 +43,7 @@ export async function sendOtpSms(phone: string, code: string, purpose: string): 
 
   if (username && apiKey) {
     try {
-      const res = await fetch("https://api.africastalking.com/version1/messaging", {
+      const res = await fetch(username === "sandbox" ? "https://api.sandbox.africastalking.com/version1/messaging" : "https://api.africastalking.com/version1/messaging", {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
@@ -54,13 +54,15 @@ export async function sendOtpSms(phone: string, code: string, purpose: string): 
           username,
           to: phone,
           message: body,
-          from: senderId || "",
+          ...(senderId ? { from: senderId } : {}),
         }).toString(),
       });
-      if (res.ok) {
+      const data = await res.json().catch(() => null);
+      const recipient = data?.SMSMessageData?.Recipients?.[0];
+      if (res.ok && recipient?.statusCode === 101) {
         return { ok: true, channel: "at-sms" };
       }
-      return { ok: false, channel: "at-sms", error: `gateway responded ${res.status}` };
+      return { ok: false, channel: "at-sms", error: `gateway rejected SMS (${recipient?.statusCode ?? res.status})` };
     } catch (err) {
       return { ok: false, channel: "at-sms", error: err instanceof Error ? err.message : "gateway error" };
     }

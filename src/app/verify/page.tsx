@@ -6,7 +6,7 @@ import AuthShell from "@/components/auth/AuthShell";
 import { useAuth, useToast } from "@/components/providers/AppProviders";
 import { api, errorMessage, setToken, type PublicUser } from "@/lib/api";
 
-type OtpState = { phone: string; identifier?: string; code: string | null; mode: string };
+type OtpState = { phone: string; identifier?: string; code: string | null; mode: string; resendAt?: number };
 type VerifyResponse = { ok?: boolean; token?: string; user?: PublicUser; newUser?: boolean; error?: string };
 
 export default function VerifyPage() {
@@ -33,6 +33,7 @@ export default function VerifyPage() {
       }
       const parsed = JSON.parse(raw) as OtpState;
       setState(parsed);
+      setCooldown(Math.max(0, Math.ceil(((parsed.resendAt ?? 0) - Date.now()) / 1000)));
       if (parsed.code) setDigits(parsed.code.split("").slice(0, 6));
     } catch {
       router.replace("/login");
@@ -47,7 +48,7 @@ export default function VerifyPage() {
 
   useEffect(() => {
     boxes.current[0]?.focus();
-  }, []);
+  }, [state?.phone]);
 
   const setDigit = (i: number, value: string) => {
     const clean = value.replace(/\D/g, "");
@@ -76,7 +77,7 @@ export default function VerifyPage() {
   };
 
   const submit = async () => {
-    if (!state || code.length !== 6) return;
+    if (busy || !state || code.length !== 6) return;
     setError(null);
     setBusy(true);
 
@@ -123,19 +124,25 @@ export default function VerifyPage() {
   };
 
   const resend = async () => {
-    if (!state || cooldown) return;
+    if (busy || !state || cooldown) return;
+    setError(null);
     setBusy(true);
-    const res = await api<{ ok?: boolean; devCode?: string; error?: string }>("/api/auth/resend-otp", {
+    const res = await api<{ ok?: boolean; devCode?: string; error?: string; retryAfter?: number }>("/api/auth/resend-otp", {
       method: "POST",
       json: { phone: state.phone, purpose: isReset ? "reset" : state.mode === "register" ? "register" : "login" },
     });
     setBusy(false);
-    setCooldown(20);
+    const wait = res.ok ? 20 : res.data.retryAfter ?? 0;
+    const next = { ...state, resendAt: Date.now() + wait * 1000, code: res.ok ? res.data.devCode ?? null : state.code };
+    setCooldown(wait);
+    setState(next);
+    sessionStorage.setItem("av-otp", JSON.stringify(next));
     if (!res.ok) {
       setError(errorMessage(res.data, "Could not resend the code."));
       return;
     }
-    setState((s) => (s ? { ...s, code: res.data.devCode ?? s.code } : s));
+    setStep("code");
+    requestAnimationFrame(() => boxes.current[0]?.focus());
     if (res.data.devCode) setDigits(res.data.devCode.split("").slice(0, 6));
     else setDigits(["", "", "", "", "", ""]);
     push("A new code is on its way.", "success");
@@ -167,6 +174,14 @@ export default function VerifyPage() {
                 if (e.key === "Enter") void submit();
               }}
               disabled={isReset && step === "password"}
+              aria-label={`Code digit ${i + 1} of 6`}
+              autoComplete={i === 0 ? "one-time-code" : "off"}
+              onPaste={(e) => {
+                const pasted = e.clipboardData.getData("text").replace(/\D/g, "");
+                if (!pasted) return;
+                e.preventDefault();
+                setDigit(pasted.length >= 6 ? 0 : i, pasted);
+              }}
               inputMode="numeric"
               maxLength={6}
               className="input tabular h-14 w-full text-center text-2xl font-black disabled:cursor-not-allowed"
@@ -228,7 +243,7 @@ export default function VerifyPage() {
         ) : null}
 
         {error ? (
-          <p className="rounded-lg border border-rose-500/40 bg-rose-950/50 px-3 py-2 text-xs font-semibold text-rose-200">
+          <p role="alert" className="rounded-lg border border-rose-500/40 bg-rose-950/50 px-3 py-2 text-xs font-semibold text-rose-200">
             {error}
           </p>
         ) : null}
@@ -248,8 +263,11 @@ export default function VerifyPage() {
         </button>
 
         <div className="flex items-center justify-between text-xs">
-          <button onClick={() => router.push("/login")} className="font-bold text-mist hover:text-white">
-            ← Back to login
+          <button disabled={busy} onClick={() => {
+            sessionStorage.removeItem("av-otp");
+            router.push(state?.mode === "register" ? "/register" : isReset ? "/login?mode=forgot" : "/login");
+          }} className="font-bold text-mist hover:text-white">
+            ← Use a different number
           </button>
           <button
             onClick={() => void resend()}

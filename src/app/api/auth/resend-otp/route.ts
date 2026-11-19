@@ -15,9 +15,10 @@ export async function POST(req: Request) {
   const last = await lastOtpAt(phone);
   if (last && Date.now() - last.getTime() < OTP_RESEND_COOLDOWN_MS) {
     const wait = Math.ceil((OTP_RESEND_COOLDOWN_MS - (Date.now() - last.getTime())) / 1000);
-    return Response.json({ error: `Please wait ${wait}s before requesting another code.` }, { status: 429 });
+    return Response.json({ error: `Please wait ${wait}s before requesting another code.`, retryAfter: wait }, { status: 429 });
   }
 
   const delivery = await issueOtp(phone, purpose);
+  if (!delivery.ok) return Response.json({ error: "Could not send the SMS. Try again later." }, { status: 502 });
   return Response.json({ ok: true, channel: delivery.channel, devCode: delivery.demoCode });
 }

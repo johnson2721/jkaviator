@@ -42,6 +42,7 @@ function RegisterForm() {
         phone: res.data.phone ?? form.phone,
         identifier: res.data.phone ?? form.phone,
         code: res.data.devCode ?? null,
+        resendAt: Date.now() + 20_000,
         mode: "register",
       }),
     );

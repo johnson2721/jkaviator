@@ -57,6 +57,7 @@ export async function POST(req: Request) {
         return Response.json({ error: "This account is blocked. Contact support." }, { status: 403 });
       }
       const delivery = await issueOtp(accountPhone, "login");
+      if (!delivery.ok) return Response.json({ error: "Could not send the SMS. Try again later." }, { status: 502 });
       return Response.json({
         ok: true,
         needsOtp: true,
@@ -85,6 +86,7 @@ export async function POST(req: Request) {
           return Response.json({ error: "Incorrect phone number or password.", badPassword: true }, { status: 401 });
         }
         const delivery = await issueOtp(pending.phone, "register");
+        if (!delivery.ok) return Response.json({ error: "Could not send the SMS. Try again later." }, { status: 502 });
         return Response.json({
           ok: true,
           needsOtp: true,
@@ -114,6 +116,7 @@ export async function POST(req: Request) {
     }
     if (user.status === "pending") {
       const delivery = await issueOtp(user.phone, "login");
+      if (!delivery.ok) return Response.json({ error: "Could not send the SMS. Try again later." }, { status: 502 });
       return Response.json({
         ok: true,
         needsOtp: true,

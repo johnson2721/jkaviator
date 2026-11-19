@@ -29,6 +29,7 @@ export async function POST(req: Request) {
   }
 
   const delivery = await issueOtp(target.phone, "reset");
+  if (!delivery.ok) return Response.json({ error: "Could not send the SMS. Try again later." }, { status: 502 });
   return Response.json({
     ok: true,
     phone: target.phone,
